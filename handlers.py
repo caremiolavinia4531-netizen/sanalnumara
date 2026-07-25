@@ -151,11 +151,11 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # --- SHOPIER DOĞRUDAN KARTLA ÖDEME LİNKLERİ ---
         shopier_linkleri = {
-            "indonesia": "https://www.shopier.com/s/payment/Sanalnnumara/595789260",
-            # İleride ekleyeceğin diğer ülkelerin linklerini buraya ekleyebilirsin
+            "indonesia": "https://www.shopier.com/49138128",  # Endonezya için verdiğin link
+            # Diğer ülkelerin linklerini buraya ekleyebilirsin
         }
         
-        shopier_link = shopier_linkleri.get(country_code, "https://www.shopier.com/s/payment/Sanalnnumara/595789260")
+        shopier_link = shopier_linkleri.get(country_code, "https://www.shopier.com/49138128")
 
         inline_kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("💳 Kredi/Banka Kartı İle Öde", url=shopier_link)],
