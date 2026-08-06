@@ -17,7 +17,7 @@ from database import (
     get_user_balance,
     add_user_balance,
     deduct_user_balance,
-    get_pending_orders_for_admin,  # Bekleyen siparişler için
+    get_pending_orders_for_admin,
 )
 from messages import (
     START_MESSAGE,
@@ -256,7 +256,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admin_kb = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("✅ Teslim Edildi", callback_data=f"order_approve_{order_id}"),
-                    InlineKeyboardButton("❌ İptal Et & İade Yap", callback_data=f"order_refund_{order_id}_{user_id}_{price}")
+                    InlineKeyboardButton("❌ İptal Et & İade Yap", callback_data=f"order_refund_{order_id}")
                 ]
             ])
 
@@ -464,7 +464,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 admin_kb = InlineKeyboardMarkup([
                     [
                         InlineKeyboardButton("✅ Teslim Edildi", callback_data=f"order_approve_{order_id}"),
-                        InlineKeyboardButton("❌ İptal Et & İade Yap", callback_data=f"order_refund_{order_id}_{target_telegram_id}_{price}")
+                        InlineKeyboardButton("❌ İptal Et & İade Yap", callback_data=f"order_refund_{order_id}")
                     ]
                 ])
                 
@@ -498,7 +498,7 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         ])
 
-        await context.bot.send_message(
+    await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=f"💳 *YENİ BAKİYE YÜKLEME TALEBİ!*\n\n"
                  f"👤 *Müşteri:* {first_name} (@{username})\n"
@@ -548,22 +548,43 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Yetkiniz yok!", show_alert=True)
             return
         
-        _, order_id, target_user_id, price = data.split("_")
-        price = float(price)
-        
-        add_user_balance(int(target_user_id), price)
-        update_order_status(order_id, "İptal/İade Edildi")
-        
-        await query.answer("Sipariş iptal edildi ve bakiye iade edildi!")
+        order_id = data.split("_")[2]
         
         try:
-            await context.bot.send_message(
-                chat_id=int(target_user_id),
-                text=f"❌ *Siparişiniz İptal Edildi*\n\n#{order_id} numaralı siparişiniz iptal edildi ve *{price} TL* tutarındaki bakiye hesabınıza iade edildi.",
-                parse_mode="Markdown"
-            )
-        except Exception:
-            pass
+            conn = connect()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT o.user_id, u.telegram_id, p.price 
+                FROM orders o 
+                JOIN users u ON o.user_id = u.id 
+                JOIN products p ON o.product_id = p.id 
+                WHERE o.id = %s
+            """, (int(order_id),))
+            result = cursor.fetchone()
+            cursor.close()
+            conn.close()
 
-        await query.edit_message_text(text=f"{query.message.text}\n\n❌ *İptal Edildi ve {price} TL İade Yapıldı.*")
-        
+            if result:
+                _, target_telegram_id, price = result
+                price = float(price)
+                
+                add_user_balance(int(target_telegram_id), price)
+                update_order_status(order_id, "İptal/İade Edildi")
+                
+                await query.answer("Sipariş iptal edildi ve bakiye iade edildi!")
+                
+                try:
+                    await context.bot.send_message(
+                        chat_id=int(target_telegram_id),
+                        text=f"❌ *Siparişiniz İptal Edildi*\n\n#{order_id} numaralı siparişiniz iptal edildi ve *{price} TL* tutarındaki bakiye hesabınıza iade edildi.",
+                        parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
+
+                await query.edit_message_text(text=f"{query.message.text}\n\n❌ *İptal Edildi ve {price} TL İade Yapıldı.*", parse_mode="Markdown")
+            else:
+                await query.answer("Sipariş veritabanında bulunamadı!", show_alert=True)
+        except Exception as e:
+            logging.error(f"İade hatası: {e}")
+            await query.answer("İade işlemi sırasında hata oluştu!", show_alert=True)
