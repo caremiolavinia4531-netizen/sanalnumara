@@ -156,13 +156,12 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Bu menüye erişim yetkiniz yok.")
         return
 
-    # --- ÜRÜN SORGULAMA KISMI (İsim Uyuşmazlığı Düzeltildi) ---
+    # --- ÜRÜN SORGULAMA ---
     if text in COUNTRIES:
         clean_country_name = text.split(" ", 1)[1] if " " in text else text
         try:
             conn = connect()
             cursor = conn.cursor()
-            # Hem "Endonezya" hem de "Endonezya WhatsApp" kayıtlarını esnek aratıyoruz
             cursor.execute(
                 "SELECT price, stock, description FROM products WHERE name ILIKE %s OR name ILIKE %s LIMIT 1", 
                 (clean_country_name, f"{clean_country_name} WhatsApp")
@@ -384,7 +383,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"✅ Duyuru {sent} kişiye iletildi.", reply_markup=admin_menu())
             return
 
-        # Admin Buton Komutları
         if text == "➕ Ürün Ekle":
             context.user_data["admin_step"] = "urun_adi"
             await update.message.reply_text("📝 Eklenecek ürünün adını gönderiniz.")
@@ -491,7 +489,7 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        await query.edit_message_text(text=query.message.text + f"\n\n✅ *{amount} TL Bakiye Eklendi.*")
+        await query.edit_message_text(text=f"{query.message.text}\n\n✅ *{amount} TL Bakiye Eklendi.*")
 
     elif data.startswith("order_approve_"):
         if user_id != ADMIN_ID:
@@ -501,5 +499,9 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         order_id = data.split("_")[2]
         update_order_status(order_id, "Tamamlandı")
         
-        new_text = query.message.text + f"\n\n✅ *Durum:* Sipariş Tamamlandı."
-        await query.edit_message_text(text=new_text, 
+        new_text = f"{query.message.text}\n\n✅ *Durum:* Sipariş Tamamlandı."
+        await query.edit_message_text(text=new_text, parse_mode="Markdown")
+
+    elif data.startswith("order_refund_"):
+        if user_id != ADMIN_ID:
+            await query.answer("Yetkiniz yok!", show_alert
