@@ -501,7 +501,31 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         new_text = f"{query.message.text}\n\n✅ *Durum:* Sipariş Tamamlandı."
         await query.edit_message_text(text=new_text, parse_mode="Markdown")
-
+ 
     elif data.startswith("order_refund_"):
         if user_id != ADMIN_ID:
             await query.answer("Yetkiniz yok!", show_alert
+                                   elif data.startswith("order_refund_"):
+        if user_id != ADMIN_ID:
+            await query.answer("Yetkiniz yok!", show_alert=True)
+            return
+        
+        _, order_id, target_user_id, price = data.split("_")
+        price = float(price)
+        
+        add_user_balance(int(target_user_id), price)
+        update_order_status(order_id, "İptal/İade Edildi")
+        
+        await query.answer("Sipariş iptal edildi ve bakiye iade edildi!")
+        
+        try:
+            await context.bot.send_message(
+                chat_id=int(target_user_id),
+                text=f"❌ *Siparişiniz İptal Edildi*\n\n#{order_id} numaralı siparişiniz iptal edildi ve *{price} TL* tutarındaki bakiye hesabınıza iade edildi.",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+        await query.edit_message_text(text=f"{query.message.text}\n\n❌ *İptal Edildi ve {price} TL İade Yapıldı.*")
+        
