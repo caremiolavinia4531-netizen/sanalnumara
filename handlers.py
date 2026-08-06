@@ -498,7 +498,7 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         ])
 
-    await context.bot.send_message(
+        await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=f"💳 *YENİ BAKİYE YÜKLEME TALEBİ!*\n\n"
                  f"👤 *Müşteri:* {first_name} (@{username})\n"
@@ -548,7 +548,9 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Yetkiniz yok!", show_alert=True)
             return
         
-        order_id = data.split("_")[2]
+        # Gelecek eski/yeni tüm callback verilerini çökmeden güvenle ayrıştırır
+        parts = data.split("_")
+        order_id = parts[2]
         
         try:
             conn = connect()
@@ -588,3 +590,4 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logging.error(f"İade hatası: {e}")
             await query.answer("İade işlemi sırasında hata oluştu!", show_alert=True)
+        
