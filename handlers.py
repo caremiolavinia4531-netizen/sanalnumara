@@ -501,11 +501,8 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         new_text = f"{query.message.text}\n\n✅ *Durum:* Sipariş Tamamlandı."
         await query.edit_message_text(text=new_text, parse_mode="Markdown")
- 
-    elif data.startswith("order_refund_"):
-        if user_id != ADMIN_ID:
-            await query.answer("Yetkiniz yok!", show_alert
-                                   elif data.startswith("order_refund_"):
+       
+   elif data.startswith("order_refund_"):
         if user_id != ADMIN_ID:
             await query.answer("Yetkiniz yok!", show_alert=True)
             return
