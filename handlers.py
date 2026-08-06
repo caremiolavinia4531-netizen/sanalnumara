@@ -14,6 +14,9 @@ from database import (
     update_stock,
     get_user_db_id,
     update_order_status,
+    get_user_balance,
+    add_user_balance,
+    deduct_user_balance,
 )
 from messages import (
     START_MESSAGE,
@@ -59,7 +62,7 @@ RULES = """
 • Hesabı açtıktan sonra 30-60 dakika mesaj göndermeyin.
 • Profil fotoğrafı ve isim ekleyin.
 • İlk gün çok fazla mesaj göndermeyin.
-• Aynı mesajı manyak gibi birçok kişiye göndermek ban sebebidir.
+• Aynı mesajı manyak gibi bir çok kişiye göndermek ban sebebidir.
 
 🫡 İyi kullanımlar.
 """
@@ -90,6 +93,32 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "🛒 Ürünler":
         await update.message.reply_text("🌍 Satın almak istediğiniz ülkeyi seçiniz.", reply_markup=country_menu())
+        return
+
+    elif text == "👤 Hesabım":
+        balance = get_user_balance(user_id)
+        await update.message.reply_text(
+            f"👤 *Profil Bilgileriniz*\n\n"
+            f"🆔 *Telegram ID:* `{user_id}`\n"
+            f"💰 *Bakiyeniz:* `{balance} TL`",
+            parse_mode="Markdown"
+        )
+        return
+
+    elif text == "💳 Bakiye Yükle":
+        shopier_link = "https://www.shopier.com/49138128"
+        inline_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Shopier ile Öde", url=shopier_link)],
+            [InlineKeyboardButton("✅ Ödemeyi Yaptım", callback_data=f"bakiye_bildir_{user_id}")]
+        ])
+        await update.message.reply_text(
+            "💳 *Bakiye Yükleme*\n\n"
+            "1️⃣ Aşağıdaki **Shopier ile Öde** butonuna basarak ödemenizi yapın.\n"
+            "2️⃣ Ödemeyi tamamladıktan sonra **Ödemeyi Yaptım** butonuna basın.\n"
+            "3️⃣ Ödemeniz kontrol edilip bakiyeniz hesabınıza aktarılacaktır.",
+            parse_mode="Markdown",
+            reply_markup=inline_kb
+        )
         return
 
     elif text == "📦 Siparişlerim":
@@ -150,7 +179,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             context.user_data["last_viewed_country_key"] = text
             context.user_data["last_viewed_country"] = COUNTRIES[text]
-            context.user_data["last_viewed_price"] = "250"
+            context.user_data["last_viewed_price"] = 250
             await update.message.reply_text(
                 f"📱 {display_name} WhatsApp\n\n💰 Fiyat: 250 TL\n📦 Stok: 0\n\n❌ Bu ürün şu anda stokta bulunmuyor.",
                 reply_markup=country_menu()
@@ -160,28 +189,71 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🛒 Satın Al":
         country_key = context.user_data.get("last_viewed_country_key", "🇮🇩 Endonezya")
         country_code = COUNTRIES[country_key]
-        price = context.user_data.get("last_viewed_price", "250")
+        price = float(context.user_data.get("last_viewed_price", 250))
+        display_name = country_key.split(" ")[1]
         
-        shopier_linkleri = {
-            "indonesia": "https://www.shopier.com/49138128",
-        }
-        
-        shopier_link = shopier_linkleri.get(country_code, "https://www.shopier.com/49138128")
+        user_bal = get_user_balance(user_id)
 
-        inline_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 Kredi/Banka Kartı İle Öde", url=shopier_link)],
-            [InlineKeyboardButton("✅ Ödemeyi Tamamladım", callback_data=f"pay_confirm_{country_code}_{price}")]
-        ])
-        
-        await update.message.reply_text(
-            f"🛒 *Siparişiniz Oluşturuldu ({country_key.split(' ')[1]} WhatsApp)*\n\n"
-            f"💰 *Tutar:* {price} TL\n\n"
-            f"⚠️ Güvenli ödeme sayfasına geçmek için lütfen aşağıdaki **Kredi/Banka Kartı İle Öde** butonuna tıklayın.\n\n"
-            f"Kartla ödemenizi tamamladıktan sonra bota geri dönüp **Ödemeyi Tamamladım** butonuna basınız. "
-            f"Bildiriminiz anlık olarak admine iletilecektir.",
-            parse_mode="Markdown",
-            reply_markup=inline_kb
-        )
+        if user_bal < price:
+            await update.message.reply_text(
+                f"❌ *Yetersiz Bakiye!*\n\n"
+                f"📱 Ürün Fiyatı: *{price} TL*\n"
+                f"💰 Bakiyeniz: *{user_bal} TL*\n\n"
+                f"Lütfen ana menüden **💳 Bakiye Yükle** butonuna basarak bakiye yükleyiniz.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if deduct_user_balance(user_id, price):
+            db_user_id = get_user_db_id(user_id)
+            conn = connect()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM products WHERE name=?", (display_name,))
+            prod = cursor.fetchone()
+            
+            order_id = "Bilinmiyor"
+            if prod and db_user_id:
+                product_id = prod[0]
+                cursor.execute(
+                    "INSERT INTO orders (user_id, product_id, quantity, status, created_at) VALUES (?, ?, 1, 'Beklemede', datetime('now', 'localtime'))", 
+                    (db_user_id, product_id)
+                )
+                conn.commit()
+                order_id = cursor.lastrowid
+                update_stock(product_id, 1)
+            conn.close()
+
+            new_balance = get_user_balance(user_id)
+
+            await update.message.reply_text(
+                f"✅ *Siparişiniz Başarıyla Oluşturuldu!*\n\n"
+                f"🆔 *Sipariş No:* #{order_id}\n"
+                f"📱 *Ürün:* {display_name} WhatsApp\n"
+                f"💰 *Çekilen Tutar:* {price} TL\n"
+                f"💵 *Kalan Bakiyeniz:* {new_balance} TL\n\n"
+                f"⏳ Numaranız teslim edilmek üzere admine iletildi.",
+                parse_mode="Markdown"
+            )
+
+            admin_kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ Teslim Edildi", callback_data=f"order_approve_{order_id}"),
+                    InlineKeyboardButton("❌ İptal Et & İade Yap", callback_data=f"order_refund_{order_id}_{user_id}_{price}")
+                ]
+            ])
+
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"🚨 *YENİ BAKİYELİ SİPARİŞ!*\n\n"
+                     f"🆔 *Sipariş No:* #{order_id}\n"
+                     f"👤 *Müşteri:* {update.effective_user.first_name} (@{update.effective_user.username})\n"
+                     f"🆔 *ID:* `{user_id}`\n"
+                     f"📦 *Ülke:* {display_name}\n"
+                     f"💰 *Ödenen Tutar:* {price} TL (Bakiyeden Düşüldü)\n\n"
+                     f"Numarayı müşteriye iletebilirsin.",
+                parse_mode="Markdown",
+                reply_markup=admin_kb
+            )
         return
 
     if text in ["➕ Ürün Ekle", "➖ Ürün Sil", "📢 Duyuru Gönder", "📦 Stok Güncelle"] or admin_step:
@@ -341,89 +413,85 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = query.from_user.username or "Yok"
     first_name = query.from_user.first_name
 
-    # 1. Kullanıcı Ödemeyi Tamamladım Butonuna Bastığında
-    if data.startswith("pay_confirm_"):
+    if data.startswith("bakiye_bildir_"):
+        target_user_id = data.split("_")[2]
         await query.answer()
-        parts = data.split("_")
-        country_code = parts[2]
-        price = parts[3]
+        await query.message.reply_text("⏳ Bakiye yükleme talebiniz admine iletildi.")
 
-        country_names = {
-            "indonesia": "Endonezya",
-            "india": "Hindistan",
-            "malaysia": "Malezya",
-            "brazil": "Brezilya",
-            "vietnam": "Vietnam",
-            "philippines": "Filipinler",
-            "thailand": "Tayland",
-            "mexico": "Meksika",
-            "southafrica": "Güney Afrika",
-            "turkey": "Türkiye",
-        }
-        prod_name = country_names.get(country_code, "Endonezya")
-
-        order_id = "Bilinmiyor"
-        try:
-            conn = connect()
-            cursor = conn.cursor()
-            db_user_id = get_user_db_id(user_id)
-            if not db_user_id:
-                cursor.execute("INSERT OR IGNORE INTO users (telegram_id, username, first_name) VALUES (?, ?, ?)", (user_id, username, first_name))
-                conn.commit()
-                db_user_id = get_user_db_id(user_id)
-
-            cursor.execute("SELECT id FROM products WHERE name=?", (prod_name,))
-            prod = cursor.fetchone()
-            
-            if prod and db_user_id:
-                product_id = prod[0]
-                cursor.execute("INSERT INTO orders (user_id, product_id, quantity, status, created_at) VALUES (?, ?, 1, 'Beklemede', datetime('now', 'localtime'))", (db_user_id, product_id))
-                conn.commit()
-                order_id = cursor.lastrowid
-                
-            conn.close()
-        except Exception as e:
-            print(f"Sipariş kaydetme hatası: {e}")
-
-        await query.message.reply_text("⏳ Ödeme bildiriminiz admine iletildi. Kontrol edildikten sonra manuel onaylanacaktır.")
-
-        # Admine giden mesaja onay/red butonları ekliyoruz
         admin_kb = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("✅ Tamamla", callback_data=f"order_approve_{order_id}"),
-                InlineKeyboardButton("❌ İptal Et", callback_data=f"order_cancel_{order_id}")
+                InlineKeyboardButton("➕ 50 TL", callback_data=f"addbal_{target_user_id}_50"),
+                InlineKeyboardButton("➕ 100 TL", callback_data=f"addbal_{target_user_id}_100"),
+                InlineKeyboardButton("➕ 250 TL", callback_data=f"addbal_{target_user_id}_250"),
             ]
         ])
 
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"🚨 *YENİ BİRİ SATIN ALMAYA BASTI!*\n\n🆔 *Sipariş No:* #{order_id}\n👤 *Müşteri:* {first_name} (@{username})\n🆔 *ID:* `{user_id}`\n📦 *Ülke:* {country_code}\n💰 *Tutar:* {price} TL\n\nManuel teslimat yapabilirsin.",
+            text=f"💳 *YENİ BAKİYE YÜKLEME TALEBİ!*\n\n"
+                 f"👤 *Müşteri:* {first_name} (@{username})\n"
+                 f"🆔 *ID:* `{target_user_id}`\n\n"
+                 f"Shopier'i kontrol edip bakiyesini onaylayabilirsiniz:",
             parse_mode="Markdown",
             reply_markup=admin_kb
         )
 
-    # 2. Admin Siparişi Onayladığında (Tamamlandı)
+    elif data.startswith("addbal_"):
+        if user_id != ADMIN_ID:
+            await query.answer("Yetkiniz yok!", show_alert=True)
+            return
+        
+        _, target_user_id, amount = data.split("_")
+        amount = float(amount)
+        
+        add_user_balance(int(target_user_id), amount)
+        current_bal = get_user_balance(int(target_user_id))
+        
+        await query.answer(f"{amount} TL Bakiye Eklendi!")
+        
+        try:
+            await context.bot.send_message(
+                chat_id=int(target_user_id),
+                text=f"🎉 *Bakiyeniz Yüklendi!*\n\nHesabınıza *{amount} TL* bakiye eklenmiştir.\n💵 Güncel Bakiyeniz: *{current_bal} TL*",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+        await query.edit_message_text(text=query.message.text + f"\n\n✅ *{amount} TL Bakiye Eklendi.*")
+
     elif data.startswith("order_approve_"):
         if user_id != ADMIN_ID:
             await query.answer("Bu işlemi sadece admin yapabilir!", show_alert=True)
             return
-        await query.answer("Sipariş onaylandı!")
+        await query.answer("Sipariş teslim edildi olarak işaretlendi!")
         order_id = data.split("_")[2]
         update_order_status(order_id, "Tamamlandı")
         
-        # Mesajı güncelleyip butonları kaldırıyoruz
-        new_text = query.message.text + f"\n\n✅ *Durum:* Sipariş Tamamlandı olarak güncellendi."
+        new_text = query.message.text + f"\n\n✅ *Durum:* Sipariş Tamamlandı."
         await query.edit_message_text(text=new_text, parse_mode="Markdown")
 
-    # 3. Admin Siparişi İptal Ettiğinde
-    elif data.startswith("order_cancel_"):
+    elif data.startswith("order_refund_"):
         if user_id != ADMIN_ID:
-            await query.answer("Bu işlemi sadece admin yapabilir!", show_alert=True)
+            await query.answer("Yetkiniz yok!", show_alert=True)
             return
-        await query.answer("Sipariş iptal edildi!")
-        order_id = data.split("_")[2]
-        update_order_status(order_id, "İptal Edildi")
         
-        # Mesajı güncelleyip butonları kaldırıyoruz
-        new_text = query.message.text + f"\n\n❌ *Durum:* Sipariş İptal Edildi."
-        await query.edit_message_text(text=new_text, parse_mode="Markdown")
+        _, order_id, target_user_id, price = data.split("_")
+        price = float(price)
+        
+        add_user_balance(int(target_user_id), price)
+        update_order_status(order_id, "İptal/İade Edildi")
+        
+        await query.answer("Sipariş iptal edildi ve bakiye iade edildi!")
+        
+        try:
+            await context.bot.send_message(
+                chat_id=int(target_user_id),
+                text=f"❌ *Siparişiniz İptal Edildi*\n\n#{order_id} numaralı siparişiniz iptal edildi ve *{price} TL* tutarındaki bakiye hesabınıza iade edildi.",
+                parse_mode="Markdown"
+            )
+        except Exception:
+            pass
+
+        await query.edit_message_text(text=query.message.text + f"\n\n❌ *İptal Edildi ve {price} TL İade Yapıldı.*")
+                
