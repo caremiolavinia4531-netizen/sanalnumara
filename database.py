@@ -118,7 +118,7 @@ def add_user(telegram_id, username, first_name):
     cursor.execute("""
     INSERT OR IGNORE INTO users (telegram_id, username, first_name)
     VALUES (?, ?, ?)
-    """, (telegram_id, username, first_name))
+    """, (int(telegram_id), username, first_name))
     conn.commit()
     conn.close()
 
@@ -184,7 +184,7 @@ def update_stock(product_id, quantity=1):
 def get_user_db_id(telegram_id):
     conn = connect()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE telegram_id=?", (telegram_id,))
+    cursor.execute("SELECT id FROM users WHERE telegram_id=?", (int(telegram_id),))
     row = cursor.fetchone()
     conn.close()
     return row[0] if row else None
@@ -202,29 +202,56 @@ def update_order_status(order_id, status):
     conn.close()
 
 
+# --- BAKİYE FONKSİYONLARI (TAM GÜVENLİ VE GARANTİLİ) ---
+
 def get_user_balance(telegram_id):
     conn = connect()
     cursor = conn.cursor()
-    cursor.execute("SELECT balance FROM users WHERE telegram_id=?", (telegram_id,))
+    cursor.execute("SELECT balance FROM users WHERE telegram_id=?", (int(telegram_id),))
     row = cursor.fetchone()
     conn.close()
-    return row[0] if row and row[0] is not None else 0.0
+    return float(row[0]) if row and row[0] is not None else 0.0
 
 
 def add_user_balance(telegram_id, amount):
     conn = connect()
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id=?", (amount, telegram_id))
+    t_id = int(telegram_id)
+    amt = float(amount)
+    
+    # Kullanıcının tabloda olup olmadığını kontrol et
+    cursor.execute("SELECT balance FROM users WHERE telegram_id=?", (t_id,))
+    row = cursor.fetchone()
+    
+    if row is None:
+        # Yoksa yeni satır oluşturarak bakiyesini yükle
+        cursor.execute(
+            "INSERT INTO users (telegram_id, balance) VALUES (?, ?)", 
+            (t_id, amt)
+        )
+    else:
+        # Varsa mevcut bakiyeye ekle
+        cursor.execute(
+            "UPDATE users SET balance = balance + ? WHERE telegram_id=?", 
+            (amt, t_id)
+        )
+        
     conn.commit()
     conn.close()
 
 
 def deduct_user_balance(telegram_id, amount):
-    current_balance = get_user_balance(telegram_id)
-    if current_balance >= amount:
+    t_id = int(telegram_id)
+    amt = float(amount)
+    current_balance = get_user_balance(t_id)
+    
+    if current_balance >= amt:
         conn = connect()
         cursor = conn.cursor()
-        cursor.execute("UPDATE users SET balance = balance - ? WHERE telegram_id=?", (amount, telegram_id))
+        cursor.execute(
+            "UPDATE users SET balance = balance - ? WHERE telegram_id=?", 
+            (amt, t_id)
+        )
         conn.commit()
         conn.close()
         return True
