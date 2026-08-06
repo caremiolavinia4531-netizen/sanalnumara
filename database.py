@@ -17,6 +17,7 @@ def create_tables():
         telegram_id INTEGER UNIQUE,
         username TEXT,
         first_name TEXT,
+        balance REAL DEFAULT 0.0,
         joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
@@ -61,7 +62,6 @@ def init_default_products():
     conn = connect()
     cursor = conn.cursor()
     
-    # Tüm ülke kategorileri
     countries = [
         "Endonezya", "Hindistan", "Malezya", "Brezilya", 
         "Vietnam", "Filipinler", "Tayland", "Meksika", 
@@ -75,7 +75,6 @@ def init_default_products():
     
     conn.commit()
 
-    # Ürünler, Açıklamaları, Fiyatları (250 TL) ve Başlangıç Stokları (300)
     products_to_add = [
         ("Endonezya", "Endonezya WhatsApp", "Endonezya numarası", 250.0, 300),
         ("Hindistan", "Hindistan WhatsApp", "Hindistan numarası", 250.0, 300),
@@ -98,13 +97,11 @@ def init_default_products():
             prod = cursor.fetchone()
             
             if not prod:
-                # Ürün hiç yoksa fiyatı ve stoğuyla beraber ekle
                 cursor.execute("""
                 INSERT INTO products (category_id, name, description, price, stock)
                 VALUES (?, ?, ?, ?, ?)
                 """, (cat_id, prod_name, desc, price, stock))
             else:
-                # Ürün zaten varsa fiyatını ve stoğunu güncelle
                 cursor.execute("""
                 UPDATE products 
                 SET price = ?, stock = CASE WHEN stock = 0 THEN ? ELSE stock END 
@@ -203,6 +200,35 @@ def update_order_status(order_id, status):
     """, (status, order_id))
     conn.commit()
     conn.close()
+
+
+def get_user_balance(telegram_id):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT balance FROM users WHERE telegram_id=?", (telegram_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row and row[0] is not None else 0.0
+
+
+def add_user_balance(telegram_id, amount):
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET balance = balance + ? WHERE telegram_id=?", (amount, telegram_id))
+    conn.commit()
+    conn.close()
+
+
+def deduct_user_balance(telegram_id, amount):
+    current_balance = get_user_balance(telegram_id)
+    if current_balance >= amount:
+        conn = connect()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET balance = balance - ? WHERE telegram_id=?", (amount, telegram_id))
+        conn.commit()
+        conn.close()
+        return True
+    return False
 
 
 create_tables()
