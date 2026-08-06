@@ -37,7 +37,7 @@ def admin_menu() -> ReplyKeyboardMarkup:
     keyboard = [
         ["➕ Ürün Ekle", "➖ Ürün Sil"],
         ["📦 Stok Güncelle", "📢 Duyuru Gönder"],
+        ["⏳ Bekleyen Siparişler"],
         ["🏠 Ana Menü"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    
