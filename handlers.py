@@ -498,36 +498,6 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         ])
 
-                       await context.bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=msg_text,
-                    reply_markup=admin_kb,
-                    parse_mode="Markdown"
-                )
-            return
-
-    await update.message.reply_text("❓ Lütfen menüden bir seçenek seçiniz.", reply_markup=main_menu(is_admin=is_admin))
-
-async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-    user_id = query.from_user.id
-    username = query.from_user.username or "Yok"
-    first_name = query.from_user.first_name
-
-    if data.startswith("bakiye_bildir_"):
-        target_user_id = data.split("_")[2]
-        await query.answer()
-        await query.message.reply_text("⏳ Bakiye yükleme talebiniz admine iletildi.")
-
-        admin_kb = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("➕ 50 TL", callback_data=f"addbal_{target_user_id}_50"),
-                InlineKeyboardButton("➕ 100 TL", callback_data=f"addbal_{target_user_id}_100"),
-                InlineKeyboardButton("➕ 250 TL", callback_data=f"addbal_{target_user_id}_250"),
-            ]
-        ])
-
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=f"💳 *YENİ BAKİYE YÜKLEME TALEBİ!*\n\n"
@@ -596,3 +566,4 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
         await query.edit_message_text(text=f"{query.message.text}\n\n❌ *İptal Edildi ve {price} TL İade Yapıldı.*")
+        
