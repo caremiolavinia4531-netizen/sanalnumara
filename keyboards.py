@@ -4,6 +4,7 @@ from telegram import ReplyKeyboardMarkup
 def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     keyboard = [
         ["🛒 Ürünler", "📦 Siparişlerim"],
+        ["💳 Bakiye Yükle", "👤 Hesabım"],
         ["📜 Kullanım Kuralları", "💬 Destek"],
         ["ℹ️ Hakkımızda"]
     ]
@@ -35,7 +36,8 @@ def product_menu() -> ReplyKeyboardMarkup:
 def admin_menu() -> ReplyKeyboardMarkup:
     keyboard = [
         ["➕ Ürün Ekle", "➖ Ürün Sil"],
-        ["📢 Duyuru Gönder"],
+        ["📦 Stok Güncelle", "📢 Duyuru Gönder"],
         ["🏠 Ana Menü"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
