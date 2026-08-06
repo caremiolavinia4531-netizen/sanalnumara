@@ -156,16 +156,22 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Bu menüye erişim yetkiniz yok.")
         return
 
+    # --- ÜRÜN SORGULAMA KISMI (İsim Uyuşmazlığı Düzeltildi) ---
     if text in COUNTRIES:
-        display_name = text.split(" ")[1]
+        clean_country_name = text.split(" ", 1)[1] if " " in text else text
         try:
             conn = connect()
             cursor = conn.cursor()
-            cursor.execute("SELECT price, stock, description FROM products WHERE name=%s", (display_name,))
+            # Hem "Endonezya" hem de "Endonezya WhatsApp" kayıtlarını esnek aratıyoruz
+            cursor.execute(
+                "SELECT price, stock, description FROM products WHERE name ILIKE %s OR name ILIKE %s LIMIT 1", 
+                (clean_country_name, f"{clean_country_name} WhatsApp")
+            )
             product = cursor.fetchone()
             cursor.close()
             conn.close()
-        except Exception:
+        except Exception as e:
+            logging.error(f"Ürün çekme hatası: {e}")
             product = None
 
         if product:
@@ -173,16 +179,23 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["last_viewed_country_key"] = text
             context.user_data["last_viewed_country"] = COUNTRIES[text]
             context.user_data["last_viewed_price"] = price
-            await update.message.reply_text(
-                f"📱 {display_name} WhatsApp\n\n💰 Fiyat: {price} TL\n📦 Stok: {stock}\n\n📝 Açıklama:\n{description}",
-                reply_markup=product_menu()
-            )
+            
+            if stock > 0:
+                await update.message.reply_text(
+                    f"📱 {clean_country_name} WhatsApp\n\n💰 Fiyat: {price} TL\n📦 Stok: {stock}\n\n📝 Açıklama:\n{description}",
+                    reply_markup=product_menu()
+                )
+            else:
+                await update.message.reply_text(
+                    f"📱 {clean_country_name} WhatsApp\n\n💰 Fiyat: {price} TL\n📦 Stok: 0\n\n❌ Bu ürün şu anda stokta bulunmuyor.",
+                    reply_markup=country_menu()
+                )
         else:
             context.user_data["last_viewed_country_key"] = text
             context.user_data["last_viewed_country"] = COUNTRIES[text]
             context.user_data["last_viewed_price"] = 250
             await update.message.reply_text(
-                f"📱 {display_name} WhatsApp\n\n💰 Fiyat: 250 TL\n📦 Stok: 0\n\n❌ Bu ürün şu anda stokta bulunmuyor.",
+                f"📱 {clean_country_name} WhatsApp\n\n💰 Fiyat: 250 TL\n📦 Stok: 0\n\n❌ Bu ürün şu anda stokta bulunmuyor.",
                 reply_markup=country_menu()
             )
         return
@@ -190,7 +203,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "🛒 Satın Al":
         country_key = context.user_data.get("last_viewed_country_key", "🇮🇩 Endonezya")
         price = float(context.user_data.get("last_viewed_price", 250))
-        display_name = country_key.split(" ")[1]
+        clean_country_name = country_key.split(" ", 1)[1] if " " in country_key else country_key
         
         user_bal = get_user_balance(user_id)
 
@@ -208,7 +221,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db_user_id = get_user_db_id(user_id)
             conn = connect()
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM products WHERE name=%s", (display_name,))
+            cursor.execute("SELECT id FROM products WHERE name ILIKE %s OR name ILIKE %s LIMIT 1", (clean_country_name, f"{clean_country_name} WhatsApp"))
             prod = cursor.fetchone()
             
             order_id = "Bilinmiyor"
@@ -229,7 +242,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ *Siparişiniz Başarıyla Oluşturuldu!*\n\n"
                 f"🆔 *Sipariş No:* #{order_id}\n"
-                f"📱 *Ürün:* {display_name} WhatsApp\n"
+                f"📱 *Ürün:* {clean_country_name} WhatsApp\n"
                 f"💰 *Çekilen Tutar:* {price} TL\n"
                 f"💵 *Kalan Bakiyeniz:* {new_balance} TL\n\n"
                 f"⏳ Numaranız teslim edilmek üzere admine iletildi.",
@@ -249,7 +262,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                      f"🆔 *Sipariş No:* #{order_id}\n"
                      f"👤 *Müşteri:* {update.effective_user.first_name} (@{update.effective_user.username})\n"
                      f"🆔 *ID:* `{user_id}`\n"
-                     f"📦 *Ülke:* {display_name}\n"
+                     f"📦 *Ülke:* {clean_country_name}\n"
                      f"💰 *Ödenen Tutar:* {price} TL (Bakiyeden Düşüldü)\n\n"
                      f"Numarayı müşteriye iletebilirsin.",
                 parse_mode="Markdown",
@@ -258,64 +271,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # --- ADMİN İŞLEMLERİ ---
-    if text in ["➕ Ürün Ekle", "➖ Ürün Sil", "📢 Duyuru Gönder", "📦 Stok Güncelle"] or admin_step:
-        if not is_admin:
-            await update.message.reply_text("❌ Yetkisiz işlem.")
-            return
-
-        if text == "➕ Ürün Ekle":
-            context.user_data["admin_step"] = "urun_adi"
-            await update.message.reply_text("📝 Eklenecek ürünün adını gönderiniz.")
-            return
-
-        elif text == "📦 Stok Güncelle":
-            try:
-                conn = connect()
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, name, stock FROM products ORDER BY id ASC")
-                products = cursor.fetchall()
-                cursor.close()
-                conn.close()
-            except Exception as e:
-                logging.error(f"Stok listeleme hatası: {e}")
-                products = []
-                
-            if not products:
-                await update.message.reply_text("❌ Ürün bulunmuyor.")
-            else:
-                text_list = "📦 *Stok Güncelleme*\n\n"
-                for pid, name, stock in products:
-                    text_list += f"🆔 ID: {pid} - {name} ({stock})\n"
-                context.user_data["admin_step"] = "stok_id_gir"
-                await update.message.reply_text(text_list, parse_mode="Markdown")
-            return
-
-        elif text == "➖ Ürün Sil":
-            try:
-                conn = connect()
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, name FROM products ORDER BY id ASC")
-                products = cursor.fetchall()
-                cursor.close()
-                conn.close()
-            except Exception:
-                products = []
-            if not products:
-                await update.message.reply_text("❌ Ürün bulunmuyor.")
-            else:
-                text_list = "🗑 Silinecek Ürünler\n\n"
-                for pid, name in products:
-                    text_list += f"{pid} - {name}\n"
-                context.user_data["admin_step"] = "urun_sil"
-                await update.message.reply_text(text_list)
-            return
-
-        elif text == "📢 Duyuru Gönder":
-            context.user_data["admin_step"] = "duyuru"
-            await update.message.reply_text("📢 Duyuru metnini yazınız.")
-            return
-
-        # ADMİN ADIMLARI
+    if is_admin:
         if admin_step == "stok_id_gir":
             try:
                 context.user_data["stock_target_id"] = int(text)
@@ -328,11 +284,16 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif admin_step == "stok_adet_gir":
             try:
                 new_stock = int(text)
-                product_id = int(context.user_data.get("stock_target_id"))
+                product_id = context.user_data.get("stock_target_id")
                 
+                if product_id is None:
+                    await update.message.reply_text("❌ Hedef ürün bulunamadı, işlemi baştan başlatın.", reply_markup=admin_menu())
+                    context.user_data.clear()
+                    return
+
                 conn = connect()
                 cursor = conn.cursor()
-                cursor.execute("UPDATE products SET stock = %s WHERE id = %s;", (new_stock, product_id))
+                cursor.execute("UPDATE products SET stock = %s WHERE id = %s;", (new_stock, int(product_id)))
                 conn.commit()
                 cursor.close()
                 conn.close()
@@ -345,7 +306,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.clear()
             return
 
-        if admin_step == "urun_adi":
+        elif admin_step == "urun_adi":
             context.user_data["urun_adi"] = text
             context.user_data["admin_step"] = "urun_aciklama"
             await update.message.reply_text("📝 Açıklama gönderiniz.")
@@ -423,6 +384,59 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"✅ Duyuru {sent} kişiye iletildi.", reply_markup=admin_menu())
             return
 
+        # Admin Buton Komutları
+        if text == "➕ Ürün Ekle":
+            context.user_data["admin_step"] = "urun_adi"
+            await update.message.reply_text("📝 Eklenecek ürünün adını gönderiniz.")
+            return
+
+        elif text == "📦 Stok Güncelle":
+            try:
+                conn = connect()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, name, stock FROM products ORDER BY id ASC")
+                products = cursor.fetchall()
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                logging.error(f"Stok listeleme hatası: {e}")
+                products = []
+                
+            if not products:
+                await update.message.reply_text("❌ Ürün bulunmuyor.")
+            else:
+                text_list = "📦 *Stok Güncelleme*\n\n"
+                for pid, name, stock in products:
+                    text_list += f"🆔 ID: {pid} - {name} ({stock})\n"
+                context.user_data["admin_step"] = "stok_id_gir"
+                await update.message.reply_text(text_list, parse_mode="Markdown")
+            return
+
+        elif text == "➖ Ürün Sil":
+            try:
+                conn = connect()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, name FROM products ORDER BY id ASC")
+                products = cursor.fetchall()
+                cursor.close()
+                conn.close()
+            except Exception:
+                products = []
+            if not products:
+                await update.message.reply_text("❌ Ürün bulunmuyor.")
+            else:
+                text_list = "🗑 Silinecek Ürünler\n\n"
+                for pid, name in products:
+                    text_list += f"{pid} - {name}\n"
+                context.user_data["admin_step"] = "urun_sil"
+                await update.message.reply_text(text_list)
+            return
+
+        elif text == "📢 Duyuru Gönder":
+            context.user_data["admin_step"] = "duyuru"
+            await update.message.reply_text("📢 Duyuru metnini yazınız.")
+            return
+
     await update.message.reply_text("❓ Lütfen menüden bir seçenek seçiniz.", reply_markup=main_menu(is_admin=is_admin))
 
 async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -488,28 +502,4 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_order_status(order_id, "Tamamlandı")
         
         new_text = query.message.text + f"\n\n✅ *Durum:* Sipariş Tamamlandı."
-        await query.edit_message_text(text=new_text, parse_mode="Markdown")
-
-    elif data.startswith("order_refund_"):
-        if user_id != ADMIN_ID:
-            await query.answer("Yetkiniz yok!", show_alert=True)
-            return
-        
-        _, order_id, target_user_id, price = data.split("_")
-        price = float(price)
-        
-        add_user_balance(int(target_user_id), price)
-        update_order_status(order_id, "İptal/İade Edildi")
-        
-        await query.answer("Sipariş iptal edildi ve bakiye iade edildi!")
-        
-        try:
-            await context.bot.send_message(
-                chat_id=int(target_user_id),
-                text=f"❌ *Siparişiniz İptal Edildi*\n\n#{order_id} numaralı siparişiniz iptal edildi ve *{price} TL* tutarındaki bakiye hesabınıza iade edildi.",
-                parse_mode="Markdown"
-            )
-        except Exception:
-            pass
-
-        await query.edit_mess
+        await query.edit_message_text(text=new_text, 
