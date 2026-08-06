@@ -72,8 +72,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = user_id == ADMIN_ID
     try:
         add_user(user_id, update.effective_user.username, update.effective_user.first_name)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.error(f"Kullanıcı ekleme hatası: {e}")
     await update.message.reply_text(START_MESSAGE, reply_markup=main_menu(is_admin=is_admin))
 
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -133,7 +133,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             text_orders = "📦 *Geçmiş Siparişleriniz*\n\n"
             for order_id, prod_name, quantity, status, created_at in orders:
-                text_orders += f"🆔 Sipariş No: #{order_id}\n📱 Ürün: {prod_name}\n adet: {quantity}\n Durum: {status}\n Tarih: {created_at}\n-------------------\n"
+                text_orders += f"🆔 Sipariş No: #{order_id}\n📱 Ürün: {prod_name}\n Adet: {quantity}\n Durum: {status}\n Tarih: {created_at}\n-------------------\n"
             await update.message.reply_text(text_orders, parse_mode="Markdown")
         return
 
@@ -161,8 +161,9 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             conn = connect()
             cursor = conn.cursor()
-            cursor.execute("SELECT price, stock, description FROM products WHERE name=?", (display_name,))
+            cursor.execute("SELECT price, stock, description FROM products WHERE name=%s", (display_name,))
             product = cursor.fetchone()
+            cursor.close()
             conn.close()
         except Exception:
             product = None
@@ -188,7 +189,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == "🛒 Satın Al":
         country_key = context.user_data.get("last_viewed_country_key", "🇮🇩 Endonezya")
-        country_code = COUNTRIES[country_key]
         price = float(context.user_data.get("last_viewed_price", 250))
         display_name = country_key.split(" ")[1]
         
@@ -208,19 +208,20 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db_user_id = get_user_db_id(user_id)
             conn = connect()
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM products WHERE name=?", (display_name,))
+            cursor.execute("SELECT id FROM products WHERE name=%s", (display_name,))
             prod = cursor.fetchone()
             
             order_id = "Bilinmiyor"
             if prod and db_user_id:
                 product_id = prod[0]
                 cursor.execute(
-                    "INSERT INTO orders (user_id, product_id, quantity, status, created_at) VALUES (?, ?, 1, 'Beklemede', datetime('now', 'localtime'))", 
+                    "INSERT INTO orders (user_id, product_id, quantity, status, created_at) VALUES (%s, %s, 1, 'Beklemede', NOW()) RETURNING id", 
                     (db_user_id, product_id)
                 )
+                order_id = cursor.fetchone()[0]
                 conn.commit()
-                order_id = cursor.lastrowid
                 update_stock(product_id, 1)
+            cursor.close()
             conn.close()
 
             new_balance = get_user_balance(user_id)
@@ -256,6 +257,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+    # --- ADMİN İŞLEMLERİ ---
     if text in ["➕ Ürün Ekle", "➖ Ürün Sil", "📢 Duyuru Gönder", "📦 Stok Güncelle"] or admin_step:
         if not is_admin:
             await update.message.reply_text("❌ Yetkisiz işlem.")
@@ -270,11 +272,14 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 conn = connect()
                 cursor = conn.cursor()
-                cursor.execute("SELECT id, name, stock FROM products")
+                cursor.execute("SELECT id, name, stock FROM products ORDER BY id ASC")
                 products = cursor.fetchall()
+                cursor.close()
                 conn.close()
-            except Exception:
+            except Exception as e:
+                logging.error(f"Stok listeleme hatası: {e}")
                 products = []
+                
             if not products:
                 await update.message.reply_text("❌ Ürün bulunmuyor.")
             else:
@@ -289,8 +294,9 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 conn = connect()
                 cursor = conn.cursor()
-                cursor.execute("SELECT id, name FROM products")
+                cursor.execute("SELECT id, name FROM products ORDER BY id ASC")
                 products = cursor.fetchall()
+                cursor.close()
                 conn.close()
             except Exception:
                 products = []
@@ -309,28 +315,33 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("📢 Duyuru metnini yazınız.")
             return
 
+        # ADMİN ADIMLARI
         if admin_step == "stok_id_gir":
             try:
                 context.user_data["stock_target_id"] = int(text)
                 context.user_data["admin_step"] = "stok_adet_gir"
                 await update.message.reply_text("📝 Yeni stok adetini girin:")
             except ValueError:
-                await update.message.reply_text("❌ Geçersiz ID.")
+                await update.message.reply_text("❌ Geçersiz ID! Lütfen sayısal bir ID girin.")
             return
 
         elif admin_step == "stok_adet_gir":
             try:
                 new_stock = int(text)
-                product_id = context.user_data.get("stock_target_id")
+                product_id = int(context.user_data.get("stock_target_id"))
+                
                 conn = connect()
                 cursor = conn.cursor()
-                cursor.execute("UPDATE products SET stock=? WHERE id=?", (new_stock, product_id))
+                cursor.execute("UPDATE products SET stock = %s WHERE id = %s;", (new_stock, product_id))
                 conn.commit()
+                cursor.close()
                 conn.close()
+
                 context.user_data.clear()
-                await update.message.reply_text("✅ Stok güncellendi.", reply_markup=admin_menu())
-            except Exception:
-                await update.message.reply_text("❌ Hata oluştu.", reply_markup=admin_menu())
+                await update.message.reply_text("✅ Stok başarıyla güncellendi!", reply_markup=admin_menu())
+            except Exception as e:
+                logging.error(f"Stok güncelleme hatası: {e}")
+                await update.message.reply_text(f"❌ Hata oluştu: {e}", reply_markup=admin_menu())
                 context.user_data.clear()
             return
 
@@ -360,13 +371,18 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 stok = int(text)
                 conn = connect()
                 cursor = conn.cursor()
-                cursor.execute("INSERT INTO products (name, description, price, stock) VALUES (?, ?, ?, ?)", (context.user_data["urun_adi"], context.user_data["urun_aciklama"], context.user_data["urun_fiyat"], stok))
+                cursor.execute(
+                    "INSERT INTO products (name, description, price, stock) VALUES (%s, %s, %s, %s)", 
+                    (context.user_data["urun_adi"], context.user_data["urun_aciklama"], context.user_data["urun_fiyat"], stok)
+                )
                 conn.commit()
+                cursor.close()
                 conn.close()
                 context.user_data.clear()
-                await update.message.reply_text("✅ Ürün eklendi.", reply_markup=admin_menu())
-            except Exception:
-                await update.message.reply_text("❌ Hata oluştu.", reply_markup=admin_menu())
+                await update.message.reply_text("✅ Ürün başarıyla eklendi.", reply_markup=admin_menu())
+            except Exception as e:
+                logging.error(f"Ürün ekleme hatası: {e}")
+                await update.message.reply_text("❌ Ürün eklenirken bir hata oluştu.", reply_markup=admin_menu())
                 context.user_data.clear()
             return
 
@@ -375,13 +391,15 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pid = int(text)
                 conn = connect()
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM products WHERE id=?", (pid,))
+                cursor.execute("DELETE FROM products WHERE id=%s", (pid,))
                 conn.commit()
+                cursor.close()
                 conn.close()
                 context.user_data.clear()
                 await update.message.reply_text("✅ Ürün silindi.", reply_markup=admin_menu())
-            except Exception:
-                await update.message.reply_text("❌ Hata.")
+            except Exception as e:
+                logging.error(f"Ürün silme hatası: {e}")
+                await update.message.reply_text("❌ Ürün silinirken hata oluştu.")
             return
 
         elif admin_step == "duyuru":
@@ -390,6 +408,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 cursor = conn.cursor()
                 cursor.execute("SELECT telegram_id FROM users")
                 users = cursor.fetchall()
+                cursor.close()
                 conn.close()
             except Exception:
                 users = []
@@ -493,5 +512,4 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        await query.edit_message_text(text=query.message.text + f"\n\n❌ *İptal Edildi ve {price} TL İade Yapıldı.*")
-                
+        await query.edit_mess
