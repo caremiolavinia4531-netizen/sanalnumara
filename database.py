@@ -264,6 +264,34 @@ def deduct_user_balance(telegram_id, amount):
     return False
 
 
+# --- ADMİN PANELİ İÇİN BEKLEYEN SİPARİŞLERİ ÇEKME FONKSİYONU ---
+
+def get_pending_orders_for_admin():
+    """
+    Durumu 'Beklemede' olan tüm siparişleri, siparişi veren kullanıcının
+    Telegram ID, kullanıcı adı ve sipariş edilen ürünün adı/fiyatı ile birlikte getirir.
+    """
+    conn = connect()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT 
+        orders.id AS order_id,
+        users.telegram_id,
+        users.username,
+        users.first_name,
+        products.name AS product_name,
+        products.price
+    FROM orders
+    INNER JOIN users ON users.id = orders.user_id
+    INNER JOIN products ON products.id = orders.product_id
+    WHERE orders.status = 'Beklemede'
+    ORDER BY orders.id ASC;
+    """)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+
+
 create_tables()
 init_default_products()
-    
