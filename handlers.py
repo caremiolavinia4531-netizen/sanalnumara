@@ -83,6 +83,11 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_admin = user_id == ADMIN_ID
     admin_step = context.user_data.get("admin_step")
 
+    try:
+        add_user(user_id, update.effective_user.username, update.effective_user.first_name)
+    except Exception as e:
+        logging.error(f"Kullanıcı ekleme hatası: {e}")
+    
     if text == "🏠 Ana Menü":
         context.user_data.clear()
         await update.message.reply_text("🏠 Ana menüye döndünüz.", reply_markup=main_menu(is_admin=is_admin))
