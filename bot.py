@@ -1,5 +1,6 @@
 import os
 import threading
+import logging
 from flask import Flask
 from telegram.ext import (
     Application,
@@ -16,6 +17,10 @@ from database import create_tables
 # --- Render'ın Port Beklentisini Karşılayan Flask Sunucusu ---
 app_flask = Flask(__name__)
 
+# Flask loglarını sessize al (log kirliliğini engeller)
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
+
 @app_flask.route('/')
 def home():
     return "Bot aktif ve çalışıyor!"
@@ -24,8 +29,8 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app_flask.run(host="0.0.0.0", port=port)
 
-# Flask'ı arka planda ayrı bir thread'de başlatıyoruz
-flask_thread = threading.Thread(target=run_flask)
+# daemon=True ekleyerek ana uygulama durduğunda flask thread'inin de otomatik kapanmasını sağlıyoruz
+flask_thread = threading.Thread(target=run_flask, daemon=True)
 flask_thread.start()
 # -----------------------------------------------------------
 
@@ -49,7 +54,10 @@ def main():
     )
 
     print("✅ Bot çalışıyor...")
-    app.run_polling()
+    
+    # drop_pending_updates=True sayesinde Render yeniden başlarken 
+    # askıda kalan eski bağlantıları ve çakışmaları otomatik temizler!
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
