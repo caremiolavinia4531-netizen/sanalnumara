@@ -156,15 +156,19 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Bu menüye erişim yetkiniz yok.")
         return
 
-    # --- ÜRÜN SORGULAMA ---
+        # --- ÜRÜN SORGULAMA ---
     if text in COUNTRIES:
-        clean_country_name = text.split(" ", 1)[1] if " " in text else text
+        # Buton metninden bayrak simgesini ve boşlukları temizle (Örn: "🇮🇳 Hindistan" -> "Hindistan")
+        clean_country_name = text.split(" ", 1)[1].strip() if " " in text else text.strip()
+        
         try:
             conn = connect()
             cursor = conn.cursor()
+            # Veritabanında ismin içinde geçen kelimeyi esnek şekilde arıyoruz (%Hindistan%)
+            search_pattern = f"%{clean_country_name}%"
             cursor.execute(
-                "SELECT price, stock, description FROM products WHERE name ILIKE %s OR name ILIKE %s LIMIT 1", 
-                (clean_country_name, f"{clean_country_name} WhatsApp")
+                "SELECT price, stock, description FROM products WHERE name ILIKE %s ORDER BY id DESC LIMIT 1", 
+                (search_pattern,)
             )
             product = cursor.fetchone()
             cursor.close()
@@ -198,8 +202,9 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=country_menu()
             )
         return
+            
 
-    elif text == "🛒 Satın Al":
+        if text == "🛒 Satın Al":
         country_key = context.user_data.get("last_viewed_country_key", "🇮🇩 Endonezya")
         price = float(context.user_data.get("last_viewed_price", 250))
         clean_country_name = country_key.split(" ", 1)[1] if " " in country_key else country_key
