@@ -497,9 +497,9 @@ async def inline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         admin_kb = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("➕ 150 TL", callback_data=f"addbal_{target_user_id}_50"),
-                InlineKeyboardButton("➕ 250 TL", callback_data=f"addbal_{target_user_id}_100"),
-                InlineKeyboardButton("➕ 500 TL", callback_data=f"addbal_{target_user_id}_250"),
+                InlineKeyboardButton("➕ 150 TL", callback_data=f"addbal_{target_user_id}_150"),
+                InlineKeyboardButton("➕ 250 TL", callback_data=f"addbal_{target_user_id}_250"),
+                InlineKeyboardButton("➕ 500 TL", callback_data=f"addbal_{target_user_id}_500"),
             ]
         ])
 
